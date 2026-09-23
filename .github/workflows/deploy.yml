@@ -1,0 +1,117 @@
+name: Build and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.value }}
+      tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: echo "value=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+      - name: Select immutable image tag
+        id: tag
+        run: echo "value=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and optionally publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.value }}:${{ steps.tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.value }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Create runtime configuration
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SMARTPROXY_HOST: ${{ secrets.SMARTPROXY_HOST }}
+          SMARTPROXY_PORT: ${{ secrets.SMARTPROXY_PORT }}
+          SMARTPROXY_USER: ${{ secrets.SMARTPROXY_USER }}
+          SMARTPROXY_PASS: ${{ secrets.SMARTPROXY_PASS }}
+        run: |
+          python - <<'PY'
+          import json, os
+          keys = (
+              "FOOTBALL_DATA_API_KEY", "NEWS_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY",
+              "API_FOOTBALL_KEY", "SMARTPROXY_HOST", "SMARTPROXY_PORT",
+              "SMARTPROXY_USER", "SMARTPROXY_PASS",
+          )
+          with open(".env.app", "w", encoding="utf-8") as env_file:
+              for key in keys:
+                  env_file.write(f"{key}={json.dumps(os.getenv(key, ''))}\n")
+          PY
+          printf 'IMAGE=ghcr.io/%s\nIMAGE_TAG=%s\nAPP_BIND_ADDRESS=%s\nAPP_PORT=%s\n' \
+            '${{ needs.build.outputs.image }}' '${{ needs.build.outputs.tag }}' \
+            '${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}' '${{ vars.APP_PORT || '8501' }}' \
+            > .env.production
+      - name: Upload deployment files
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          port="${VPS_PORT:-22}"
+          ssh -p "$port" "$VPS_USER@$VPS_HOST" 'mkdir -p ~/football-predictor && chmod 700 ~/football-predictor'
+          scp -P "$port" compose.production.yml .env.app .env.production "$VPS_USER@$VPS_HOST:~/football-predictor/"
+      - name: Start release and verify health
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          port="${VPS_PORT:-22}"
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$port" "$VPS_USER@$VPS_HOST" \
+            "cd ~/football-predictor && docker login ghcr.io -u '${{ github.actor }}' --password-stdin && chmod 600 .env.app .env.production && docker compose --env-file .env.production -f compose.production.yml pull && docker compose --env-file .env.production -f compose.production.yml up -d --remove-orphans --wait --wait-timeout 120"

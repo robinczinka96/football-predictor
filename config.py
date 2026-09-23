@@ -3,6 +3,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Runtime-generated files can live on persistent Docker volumes in production.
+APP_DATA_DIR = os.getenv(
+    "APP_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
+)
+MODEL_STORAGE_DIR = os.getenv(
+    "MODEL_STORAGE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
+)
+
 FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")

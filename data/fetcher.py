@@ -11,11 +11,11 @@ import hashlib
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import FOOTBALL_DATA_API_KEY, FOOTBALL_DATA_BASE_URL, SUPPORTED_COMPETITIONS
+from config import APP_DATA_DIR, FOOTBALL_DATA_API_KEY, FOOTBALL_DATA_BASE_URL, SUPPORTED_COMPETITIONS
 from data.csv_fetcher import fetch_csv_data
 from data.api_football_fetcher import fetch_api_football_data
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+CACHE_DIR = APP_DATA_DIR
 PROCESSED_CACHE = os.path.join(CACHE_DIR, "processed_df.parquet")
 PROCESSED_HASH  = os.path.join(CACHE_DIR, "processed_hash.txt")
 

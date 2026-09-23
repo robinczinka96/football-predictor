@@ -9,8 +9,9 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import poisson
+from config import MODEL_STORAGE_DIR
 
-DC_MODEL_PATH = os.path.join(os.path.dirname(__file__), "dc_model.pkl")
+DC_MODEL_PATH = os.path.join(MODEL_STORAGE_DIR, "dc_model.pkl")
 
 
 class DixonColesModel:

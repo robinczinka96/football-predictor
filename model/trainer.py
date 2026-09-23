@@ -12,9 +12,10 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score
+from config import MODEL_STORAGE_DIR
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
-ENCODER_PATH = os.path.join(os.path.dirname(__file__), "encoder.pkl")
+MODEL_PATH = os.path.join(MODEL_STORAGE_DIR, "model.pkl")
+ENCODER_PATH = os.path.join(MODEL_STORAGE_DIR, "encoder.pkl")
 
 FEATURES = [
     # Hazai csapat - hazai/vendég szeparált forma
