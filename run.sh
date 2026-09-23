@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 # Football Predictor indítása
 cd "$(dirname "$0")"
-export PATH="$HOME/Library/Python/3.9/bin:$PATH"
-streamlit run ui/app.py --server.port 8501 --server.headless false
+exec streamlit run ui/app.py \
+  --server.address "${STREAMLIT_SERVER_ADDRESS:-0.0.0.0}" \
+  --server.port "${STREAMLIT_SERVER_PORT:-8501}" \
+  --server.headless "${STREAMLIT_SERVER_HEADLESS:-true}"

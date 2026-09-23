@@ -61,6 +61,69 @@ streamlit run ui/app.py --server.port 8501
 
 This launches the Streamlit dashboard on `http://localhost:8501`
 
+## Docker
+
+The production image runs as an unprivileged user and includes a health check:
+
+```bash
+docker build -t football-predictor .
+docker run --rm -p 8501:8501 --env-file .env football-predictor
+```
+
+For a production-like local run, create `.env.app` from `.env.example`, then run:
+
+```bash
+printf 'IMAGE=football-predictor\nIMAGE_TAG=latest\n' > .env.production
+docker compose --env-file .env.production -f compose.production.yml up -d
+```
+
+The service binds to `127.0.0.1:8501` by default, ready to sit behind an HTTPS
+reverse proxy. Set `APP_BIND_ADDRESS=0.0.0.0` only when the port must be exposed
+directly. Cached datasets and trained models are kept in named Docker volumes.
+
+## Automatic VPS deployment with GitHub Actions
+
+`.github/workflows/deploy.yml` builds every pull request, and on pushes to `main`
+publishes an immutable image to GitHub Container Registry before deploying it.
+The deployment waits for the Streamlit health check and fails if the new container
+does not become healthy.
+
+### One-time VPS preparation
+
+1. Install Docker Engine with the Compose v2 plugin.
+2. Add the deployment user to the `docker` group (or otherwise grant it access to
+   the Docker socket), and allow SSH public-key authentication.
+3. Point your reverse proxy at `http://127.0.0.1:8501`. TLS should terminate at
+   the reverse proxy.
+4. If the repository/package is private, keep the workflow's `packages: write`
+   permission enabled. The workflow logs the VPS in to GHCR for each release.
+
+No repository checkout is needed on the VPS; release files are copied to
+`~/football-predictor` automatically.
+
+### GitHub `production` environment
+
+Create an environment named `production`, add protection rules if desired, and
+configure these **environment secrets**:
+
+| Secret | Purpose |
+| --- | --- |
+| `VPS_HOST` | VPS hostname or IP address |
+| `VPS_USER` | SSH deployment user |
+| `VPS_SSH_PRIVATE_KEY` | Private SSH key (the multiline OpenSSH value) |
+| `VPS_SSH_KNOWN_HOSTS` | Pinned host-key line from a separately verified `ssh-keyscan` |
+| `VPS_PORT` | SSH port; optional, defaults to `22` |
+| `FOOTBALL_DATA_API_KEY` | football-data.org key |
+| `NEWS_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY` | News/AI provider keys |
+| `API_FOOTBALL_KEY` | Optional API-Football key |
+| `SMARTPROXY_HOST`, `SMARTPROXY_PORT`, `SMARTPROXY_USER`, `SMARTPROXY_PASS` | Optional proxy settings |
+
+The API values are written only to the VPS-side `.env.app` file (mode `0600`),
+not baked into the container image. Also configure optional environment variables
+`APP_BIND_ADDRESS` (default `127.0.0.1`) and `APP_PORT` (default `8501`). Finally,
+ensure repository Actions settings allow workflows read/write access so the image
+can be pushed to GHCR, then push to `main` or start **Build and deploy** manually.
+
 ### Project Structure
 
 ```
